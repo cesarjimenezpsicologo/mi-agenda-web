@@ -112,7 +112,7 @@
                 line-height: 1.55;
             }
             input, textarea, select {
-                font-size: 16px !important; /* Prevents iOS Safari auto-zoom on focus */
+                font-size: 16px !important;
                 min-height: 46px;
             }
             #calendar-days-grid button {
@@ -734,7 +734,7 @@
                 <p class="text-xs sm:text-sm text-slate-500 mt-1">Exclusivo para <strong>César Jiménez</strong>. Ingresa tu clave de administrador para editar tu foto, perfil, servicios y horarios.</p>
             </div>
 
-            <form onsubmit="submitAdminLogin(event)" class="space-y-4">
+            <form id="admin-login-form" onsubmit="submitAdminLogin(event)" class="space-y-4">
                 <div>
                     <label for="admin-pin-input" class="block text-xs font-semibold text-slate-700 mb-1.5">Clave / PIN de Administrador</label>
                     <input type="password" id="admin-pin-input" required placeholder="Ingresa tu PIN" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-sage-600 focus:ring-2 focus:ring-sage-600/20 outline-none text-center text-lg tracking-widest font-bold">
@@ -743,7 +743,43 @@
                     <i class="ph ph-lock-open text-lg"></i>
                     <span>Ingresar como Administrador</span>
                 </button>
+                <div class="text-center pt-1">
+                    <button type="button" onclick="toggleAdminRecoveryView(true)" class="text-xs text-slate-500 hover:text-sage-700 underline underline-offset-2">
+                        ¿Olvidaste tu clave? Recuperar por correo
+                    </button>
+                </div>
             </form>
+
+            <div id="admin-recovery-panel" class="hidden space-y-4 text-xs">
+                <div class="p-3.5 rounded-2xl bg-sage-50 border border-sage-200 text-slate-700">
+                    Enviaremos un código de recuperación a <strong id="recovery-masked-email">cesar***@hotmail.com</strong>.
+                </div>
+                <button type="button" id="send-recovery-code-btn" onclick="requestAdminRecoveryCode()" class="w-full py-3 px-4 rounded-xl bg-calm-600 hover:bg-calm-700 text-white font-semibold transition-colors">
+                    Enviar Código de Recuperación
+                </button>
+                <form id="admin-reset-form" onsubmit="submitAdminRecoveryReset(event)" class="hidden space-y-3 pt-2 border-t border-slate-100">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Código Recibido</label>
+                        <input type="text" id="recovery-code-input" placeholder="123456" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-sage-600 font-bold tracking-widest text-center">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Nueva Clave</label>
+                        <input type="password" id="recovery-new-pin-input" placeholder="Mínimo 4 caracteres" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-sage-600 font-bold">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Confirmar Nueva Clave</label>
+                        <input type="password" id="recovery-confirm-pin-input" placeholder="Repite la clave" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 outline-none focus:border-sage-600 font-bold">
+                    </div>
+                    <button type="submit" id="confirm-recovery-reset-btn" class="w-full py-3 px-4 rounded-xl bg-sage-600 hover:bg-sage-700 text-white font-semibold transition-colors">
+                        Restablecer Clave e Ingresar
+                    </button>
+                </form>
+                <div class="text-center">
+                    <button type="button" onclick="toggleAdminRecoveryView(false)" class="text-xs text-slate-500 hover:text-slate-800 underline underline-offset-2">
+                        Volver al inicio de sesión
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1364,7 +1400,7 @@
         </div>
     </div>
 
-    <!-- Application Logic with Secure Server-Side API (Netlify Functions + Blobs) -->
+    <!-- Application Logic with Secure Server-Side API (Netlify Functions + Blobs) & Local Fallback -->
     <script>
         // ==========================================
         // 1. DEFAULT PROFILE, SERVICES & SCHEDULE CONFIG
@@ -1460,7 +1496,7 @@
         };
 
         // ==========================================
-        // 2. SERVER-SIDE API HELPERS (HTTP-ONLY COOKIE AUTH)
+        // 2. SERVER-SIDE API HELPERS & LOCAL FALLBACK
         // ==========================================
         const LOCAL_FALLBACK_CONFIG_KEY = 'cj_preview_site_config_v1';
         const LOCAL_FALLBACK_BOOKINGS_KEY = 'cj_preview_bookings_v1';
@@ -1496,7 +1532,6 @@
             if (contentType.includes('application/json')) {
                 data = await response.json();
             } else {
-                // En modo vista previa estática (sin Netlify Functions), el servidor devuelve HTML
                 const err = new Error('BACKEND_UNAVAILABLE');
                 err.isStaticPreview = true;
                 throw err;
@@ -1595,10 +1630,10 @@
 
         async function persistSiteConfigToServer() {
             if (!state.isAdmin) return;
+            try {
+                localStorage.setItem(LOCAL_FALLBACK_CONFIG_KEY, JSON.stringify(state.config));
+            } catch (_) {}
             if (!isBackendAvailable) {
-                try {
-                    localStorage.setItem(LOCAL_FALLBACK_CONFIG_KEY, JSON.stringify(state.config));
-                } catch (_) {}
                 return;
             }
             await apiFetch('/api/config', {
@@ -1759,12 +1794,10 @@
                     }
                     state.isAdmin = true;
                     closeAdminLoginModal();
+                    await refreshBookingsFromServer();
                     updateAdminUIState();
                     updateBookingBadge();
-
-                // Envío automático por WhatsApp vía CallMeBot a +56927276098
-                await sendCallMeBotWhatsAppNotification(confirmedBooking, refCode);
-                    showToast('Modo Administrador activado (Vista Previa).', 'success');
+                    showToast('Modo Administrador activado (Modo Local).', 'success');
                     return;
                 }
 
@@ -2130,7 +2163,7 @@
                     const demoCode = String(Math.floor(100000 + Math.random() * 900000));
                     sessionStorage.setItem('cj_preview_recovery_code', demoCode);
                     document.getElementById('admin-reset-form').classList.remove('hidden');
-                    showToast(`Modo vista previa: tu código de recuperación es ${demoCode}`, 'info');
+                    showToast(`Modo local: tu código de recuperación es ${demoCode}`, 'info');
                     return;
                 }
 
@@ -2180,7 +2213,9 @@
                     sessionStorage.removeItem('cj_preview_recovery_code');
                     state.isAdmin = true;
                     closeAdminLoginModal();
+                    await refreshBookingsFromServer();
                     updateAdminUIState();
+                    updateBookingBadge();
                     showToast('Contraseña restablecida. Sesión iniciada correctamente.', 'success');
                     return;
                 }
@@ -2632,21 +2667,44 @@
             const reason = document.getElementById('patient-reason').value.trim();
 
             try {
-                const result = await apiFetch('/api/bookings', {
-                    method: 'POST',
-                    body: JSON.stringify({
+                let createdBooking = null;
+
+                if (!isBackendAvailable) {
+                    createdBooking = {
+                        id: 'CJ-' + String(Math.floor(1000 + Math.random() * 9000)),
                         patientName: name,
                         patientRut: rut || 'No informado',
                         patientEmail: email,
                         patientPhone: phone,
                         reason: reason || 'Sin observaciones adicionales',
                         serviceId: service.id,
+                        serviceTitle: service.title,
+                        price: service.price,
                         date: state.selectedDate,
-                        time: state.selectedTime
-                    })
-                });
+                        time: state.selectedTime,
+                        paymentStatus: 'pending',
+                        hasBoletaPdf: false
+                    };
+                    const currentLocal = getLocalFallbackBookings();
+                    currentLocal.unshift(createdBooking);
+                    saveLocalFallbackBookings(currentLocal);
+                } else {
+                    const result = await apiFetch('/api/bookings', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            patientName: name,
+                            patientRut: rut || 'No informado',
+                            patientEmail: email,
+                            patientPhone: phone,
+                            reason: reason || 'Sin observaciones adicionales',
+                            serviceId: service.id,
+                            date: state.selectedDate,
+                            time: state.selectedTime
+                        })
+                    });
+                    createdBooking = result.booking;
+                }
 
-                const createdBooking = result.booking;
                 state.mySessionBookingIds.push(createdBooking.id);
                 saveMyBookingIds();
                 state.lastConfirmedBooking = createdBooking;
@@ -2725,16 +2783,11 @@
 
             const cleanWa = (state.config.whatsapp || '56927276098').replace(/\D/g, '');
             const waText = encodeURIComponent(
-                `Hola César Jiménez, acabo de agendar una hora psicológica online:
-` +
-                `• Código: ${booking.id}
-` +
-                `• Paciente: ${booking.patientName}
-` +
-                `• Servicio: ${booking.serviceTitle}
-` +
-                `• Modalidad: 100% Online
-` +
+                `Hola César Jiménez, acabo de agendar una hora psicológica online:\n` +
+                `• Código: ${booking.id}\n` +
+                `• Paciente: ${booking.patientName}\n` +
+                `• Servicio: ${booking.serviceTitle}\n` +
+                `• Modalidad: 100% Online\n` +
                 `• Fecha y Hora: ${formattedDate}`
             );
             document.getElementById('conf-whatsapp-btn').href = `https://wa.me/${cleanWa}?text=${waText}`;
@@ -2823,43 +2876,9 @@
                 `N° de Cuenta: ${cfg.bankAccountNumber || '777017459244'}`,
                 `Correo: ${cfg.bankEmail || 'cesar.jimenez.parra@outlook.com'}`,
                 b ? `Monto: ${formatCLP(b.price)} (Reserva ${b.id})` : ''
-            ].filter(Boolean).join('
-');
+            ].filter(Boolean).join('\n');
 
             copyTextField(text, 'Todos los datos bancarios copiados.');
-        }
-
-        async function sendCallMeBotWhatsAppNotification(booking, refCode) {
-            const targetPhone = (state.config.whatsapp || '56927276098').replace(/\D/g, '') || '56927276098';
-            const apiKey = (state.config.callmebotApiKey || '3701411').trim() || '3701411';
-
-            const humanDate = formatHumanDate(booking.date);
-            const formattedDate = `${humanDate.charAt(0).toUpperCase() + humanDate.slice(1)} • ${booking.time} hrs`;
-
-            const message = [
-                '✅ *Transferencia realizada con éxito*',
-                `• *Reserva:* ${booking.id}`,
-                `• *Paciente:* ${booking.patientName}`,
-                `• *RUT:* ${booking.patientRut || 'No informado'}`,
-                `• *Teléfono:* ${booking.patientPhone || 'No informado'}`,
-                `• *Correo:* ${booking.patientEmail || 'No informado'}`,
-                `• *Servicio:* ${booking.serviceTitle}`,
-                `• *Fecha y Hora:* ${formattedDate}`,
-                `• *Monto Transferido:* ${formatCLP(booking.price)}`,
-                `• *N° Comprobante:* ${refCode}`,
-                booking.reason ? `• *Motivo:* ${booking.reason}` : ''
-            ].filter(Boolean).join('
-');
-
-            const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(targetPhone)}&text=${encodeURIComponent(message)}&apikey=${encodeURIComponent(apiKey)}`;
-
-            try {
-                await fetch(url, { method: 'GET', mode: 'no-cors' });
-                return true;
-            } catch (err) {
-                console.warn('No se pudo enviar notificación automática por CallMeBot:', err);
-                return false;
-            }
         }
 
         async function sendCallMeBotWhatsAppNotification(booking, refCode) {
@@ -2915,39 +2934,41 @@
             }
 
             try {
-                const updated = await apiFetch('/api/bookings', {
-                    method: 'PATCH',
-                    body: JSON.stringify({
-                        id: booking.id,
-                        action: 'confirm-payment',
-                        transferRef: refCode
-                    })
-                });
-                const confirmedBooking = updated.booking || booking;
+                let confirmedBooking = { ...booking, paymentStatus: 'paid', transferRef: refCode };
+
+                if (!isBackendAvailable) {
+                    const localList = getLocalFallbackBookings().map(item =>
+                        item.id === booking.id ? confirmedBooking : item
+                    );
+                    saveLocalFallbackBookings(localList);
+                } else {
+                    const updated = await apiFetch('/api/bookings', {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            id: booking.id,
+                            action: 'confirm-payment',
+                            transferRef: refCode
+                        })
+                    });
+                    confirmedBooking = updated.booking || confirmedBooking;
+                }
+
                 state.lastConfirmedBooking = confirmedBooking;
                 await refreshBookingsFromServer();
                 updateBookingBadge();
 
-                // Envío automático por WhatsApp vía CallMeBot a +56927276098
                 await sendCallMeBotWhatsAppNotification(confirmedBooking, refCode);
 
-                // Build pre-filled WhatsApp confirmation message for César Jiménez
                 const cleanWa = (state.config.whatsapp || '56927276098').replace(/\D/g, '') || '56927276098';
                 const humanDate = formatHumanDate(confirmedBooking.date);
                 const formattedDate = `${humanDate.charAt(0).toUpperCase() + humanDate.slice(1)} • ${confirmedBooking.time} hrs`;
                 const waNotifyMsg = encodeURIComponent(
-                    `Hola César Jiménez, confirmo que realicé la transferencia con éxito:
-` +
-                    `• Reserva: ${confirmedBooking.id}
-` +
-                    `• Paciente: ${confirmedBooking.patientName}
-` +
-                    `• Servicio: ${confirmedBooking.serviceTitle}
-` +
-                    `• Fecha y Hora: ${formattedDate}
-` +
-                    `• Monto Transferido: ${formatCLP(confirmedBooking.price)}
-` +
+                    `Hola César Jiménez, confirmo que realicé la transferencia con éxito:\n` +
+                    `• Reserva: ${confirmedBooking.id}\n` +
+                    `• Paciente: ${confirmedBooking.patientName}\n` +
+                    `• Servicio: ${confirmedBooking.serviceTitle}\n` +
+                    `• Fecha y Hora: ${formattedDate}\n` +
+                    `• Monto Transferido: ${formatCLP(confirmedBooking.price)}\n` +
                     `• N° Comprobante Bancario: ${refCode}`
                 );
                 const waNotifyBtn = document.getElementById('success-whatsapp-notify-btn');
@@ -2972,13 +2993,20 @@
             if (booking) {
                 state.lastConfirmedBooking = booking;
                 try {
-                    await apiFetch('/api/bookings', {
-                        method: 'PATCH',
-                        body: JSON.stringify({
-                            id: booking.id,
-                            action: 'mark-failed'
-                        })
-                    });
+                    if (!isBackendAvailable) {
+                        const localList = getLocalFallbackBookings().map(item =>
+                            item.id === booking.id ? { ...item, paymentStatus: 'failed' } : item
+                        );
+                        saveLocalFallbackBookings(localList);
+                    } else {
+                        await apiFetch('/api/bookings', {
+                            method: 'PATCH',
+                            body: JSON.stringify({
+                                id: booking.id,
+                                action: 'mark-failed'
+                            })
+                        });
+                    }
                     await refreshBookingsFromServer();
                     updateBookingBadge();
                 } catch (err) {
@@ -3142,13 +3170,15 @@
             const b = state.lastConfirmedBooking;
             if (!b) return;
             const humanDate = formatHumanDate(b.date);
-            const text = `Reserva Psicológica - Ps. César Jiménez
-Código: ${b.id}
-Paciente: ${b.patientName}
-Servicio: ${b.serviceTitle}
-Modalidad: 100% Online
-Fecha: ${humanDate} a las ${b.time} hrs
-Valor: ${formatCLP(b.price)}`;
+            const text = [
+                'Reserva Psicológica - Ps. César Jiménez',
+                `Código: ${b.id}`,
+                `Paciente: ${b.patientName}`,
+                `Servicio: ${b.serviceTitle}`,
+                'Modalidad: 100% Online',
+                `Fecha: ${humanDate} a las ${b.time} hrs`,
+                `Valor: ${formatCLP(b.price)}`
+            ].join('\n');
             copyTextField(text, 'Detalles copiados al portapapeles.');
         }
 
@@ -3173,12 +3203,11 @@ Valor: ${formatCLP(b.price)}`;
                 `DTSTART:${startDT}`,
                 `DTEND:${endDT}`,
                 `SUMMARY:${b.serviceTitle} - Ps. César Jiménez`,
-                `DESCRIPTION:Código de reserva: ${b.id}\nModalidad: 100% Online\nPaciente: ${b.patientName}`,
-                `LOCATION:Videollamada Online (Google Meet / Zoom)`,
+                `DESCRIPTION:Código de reserva: ${b.id}\\nModalidad: 100% Online\\nPaciente: ${b.patientName}`,
+                'LOCATION:Videollamada Online (Google Meet / Zoom)',
                 'END:VEVENT',
                 'END:VCALENDAR'
-            ].join('
-');
+            ].join('\r\n');
 
             const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
             const url = URL.createObjectURL(blob);
@@ -3209,8 +3238,7 @@ Valor: ${formatCLP(b.price)}`;
                 `• Servicio: ${booking.serviceTitle}`,
                 `• Código Reserva: ${booking.id}`,
                 booking.transferRef ? `• N° Comprobante: ${booking.transferRef}` : ''
-            ].filter(Boolean).join('
-');
+            ].filter(Boolean).join('\n');
 
             const params = new URLSearchParams({
                 action: 'TEMPLATE',
@@ -3364,9 +3392,14 @@ Valor: ${formatCLP(b.price)}`;
             }
 
             try {
-                await apiFetch(`/api/bookings?id=${encodeURIComponent(bookingId)}`, {
-                    method: 'DELETE'
-                });
+                if (!isBackendAvailable) {
+                    const filtered = getLocalFallbackBookings().filter(b => b.id !== bookingId);
+                    saveLocalFallbackBookings(filtered);
+                } else {
+                    await apiFetch(`/api/bookings?id=${encodeURIComponent(bookingId)}`, {
+                        method: 'DELETE'
+                    });
+                }
                 await refreshBookingsFromServer();
                 updateBookingBadge();
                 renderAppointmentsList();
