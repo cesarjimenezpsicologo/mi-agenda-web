@@ -1860,9 +1860,6 @@
                     closeAdminLoginModal();
                     updateAdminUIState();
                     updateBookingBadge();
-
-                // Envío automático por WhatsApp vía CallMeBot a +56927276098
-                await sendCallMeBotWhatsAppNotification(confirmedBooking, refCode);
                     showToast('Modo Administrador activado (Vista Previa).', 'success');
                     return;
                 }
@@ -2211,9 +2208,12 @@
                 if (loginForm) loginForm.classList.add('hidden');
                 if (recoveryPanel) recoveryPanel.classList.remove('hidden');
                 if (resetForm) resetForm.classList.add('hidden');
-                document.getElementById('recovery-code-input').value = '';
-                document.getElementById('recovery-new-pin-input').value = '';
-                document.getElementById('recovery-confirm-pin-input').value = '';
+                const cEl = document.getElementById('recovery-code-input');
+                const nEl = document.getElementById('recovery-new-pin-input');
+                const cfEl = document.getElementById('recovery-confirm-pin-input');
+                if (cEl) cEl.value = '';
+                if (nEl) nEl.value = '';
+                if (cfEl) cfEl.value = '';
             } else {
                 if (recoveryPanel) recoveryPanel.classList.add('hidden');
                 if (loginForm) loginForm.classList.remove('hidden');
@@ -2922,45 +2922,9 @@
                 `N° de Cuenta: ${cfg.bankAccountNumber || '777017459244'}`,
                 `Correo: ${cfg.bankEmail || 'cesar.jimenez.parra@outlook.com'}`,
                 b ? `Monto: ${formatCLP(b.price)} (Reserva ${b.id})` : ''
-            ].filter(Boolean).join('
-');
+            ].filter(Boolean).join('\n');
 
             copyTextField(text, 'Todos los datos bancarios copiados.');
-        }
-
-        async function sendCallMeBotWhatsAppNotification(booking, refCode) {
-            const targetPhone = (state.config.whatsapp || '56927276098').replace(/\D/g, '') || '56927276098';
-            const apiKey = (state.config.callmebotApiKey || '3701411').trim() || '3701411';
-
-            const humanDate = formatHumanDate(booking.date);
-            const formattedDate = `${humanDate.charAt(0).toUpperCase() + humanDate.slice(1)} • ${booking.time} hrs`;
-
-            const message = [
-                '✅ *Transferencia realizada con éxito*',
-                `• *Reserva:* ${booking.id}`,
-                `• *Paciente:* ${booking.patientName}`,
-                `• *RUT:* ${booking.patientRut || 'No informado'}`,
-                `• *Teléfono:* ${booking.patientPhone || 'No informado'}`,
-                `• *Correo:* ${booking.patientEmail || 'No informado'}`,
-                `• *Servicio:* ${booking.serviceTitle}`,
-                `• *Fecha y Hora:* ${formattedDate}`,
-                `• *Monto Transferido:* ${formatCLP(booking.price)}`,
-                `• *N° Comprobante:* ${refCode}`,
-                booking.reason ? `• *Motivo:* ${booking.reason}` : ''
-            ].filter(Boolean).join('
-');
-
-            const syncLink = autoRegisterCallMeBotAgendaEntry(booking, refCode);
-            const messageWithSync = `${message}\n• Sincronizar Agenda Admin: ${syncLink}`;
-            const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(targetPhone)}&text=${encodeURIComponent(messageWithSync)}&apikey=${encodeURIComponent(apiKey)}`;
-
-            try {
-                await fetch(url, { method: 'GET', mode: 'no-cors' });
-                return true;
-            } catch (err) {
-                console.warn('No se pudo enviar notificación automática por CallMeBot:', err);
-                return false;
-            }
         }
 
         async function sendCallMeBotWhatsAppNotification(booking, refCode) {
@@ -3280,8 +3244,7 @@ Valor: ${formatCLP(b.price)}`;
                 `LOCATION:Videollamada Online (Google Meet / Zoom)`,
                 'END:VEVENT',
                 'END:VCALENDAR'
-            ].join('
-');
+            ].join('\n');
 
             const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
             const url = URL.createObjectURL(blob);
@@ -3312,8 +3275,7 @@ Valor: ${formatCLP(b.price)}`;
                 `• Servicio: ${booking.serviceTitle}`,
                 `• Código Reserva: ${booking.id}`,
                 booking.transferRef ? `• N° Comprobante: ${booking.transferRef}` : ''
-            ].filter(Boolean).join('
-');
+            ].filter(Boolean).join('\n');
 
             const params = new URLSearchParams({
                 action: 'TEMPLATE',
@@ -3907,8 +3869,7 @@ Valor: ${formatCLP(b.price)}`;
             scripts.forEach(sc => {
                 if (sc.textContent && sc.textContent.includes('const DEFAULT_SITE_CONFIG =')) {
                     sc.textContent = sc.textContent.replace(
-                        /const DEFAULT_SITE_CONFIG = \{[\s\S]*?
-        \};/,
+                        /const DEFAULT_SITE_CONFIG = \{[\s\S]*?\n        \};/,
                         `const DEFAULT_SITE_CONFIG = ${serializedConfig};`
                     );
                 }
